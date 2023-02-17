@@ -6,25 +6,25 @@ using UnityEngine.AI;
 public class Enemy : MonoBehaviour
 {
 
-    private NavMeshAgent agent;
-    private Animator animator;
-    public Transform playerTarget;
-    public Transform playerHead;
-    public float stopDistance = 5;
-    public FireBulletOnActivate gun;
+private NavMeshAgent agent;
+private Animator animator;
+public Transform playerTarget;
+public Transform playerHead;
+public float stopDistance = 5;
+public FireBulletOnActivate gun;
 
-    private Quaternion localRotationGun;
+private Quaternion localRotationGun;
 
 
-    // Start is called before the first frame update
-    void Start()
-    {
-        agent = GetComponent<NavMeshAgent>();
-        animator = GetComponent<Animator>();
-        SetupRagdoll();
+// Start is called before the first frame update
+void Start()
+{
+    agent = GetComponent<NavMeshAgent>();
+    animator = GetComponent<Animator>();
+    SetupRagdoll();
 
-        localRotationGun = gun.spawnPoint.localRotation;
-    }
+    localRotationGun = gun.spawnPoint.localRotation;
+}
 
     // Update is called once per frame
     void Update()
@@ -36,80 +36,94 @@ public class Enemy : MonoBehaviour
         {
             agent.isStopped = true;
             animator.SetBool("Shoot", true);
+
+            // Rotate towards the player
+            Vector3 direction = playerTarget.position - transform.position;
+            direction.y = 0;
+            Quaternion targetRotation = Quaternion.LookRotation(direction);
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime * 10f);
+        }
+        else
+        {
+            agent.isStopped = false;
+            animator.SetBool("Shoot", false);
         }
     }
-
     public void ThrowGun()
+{
+
+    gun.spawnPoint.localRotation = localRotationGun;
+
+    gun.transform.parent = null;
+    Rigidbody rb = gun.GetComponent<Rigidbody>();
+    rb.velocity = BallisticVelocityVector(gun.transform.position, playerHead.position, 45);
+    rb.angularVelocity = Vector3.zero;
+
+}
+
+
+Vector3 BallisticVelocityVector(Vector3 source, Vector3 target, float angle)
+{
+    Vector3 direction = target - source;
+    float h = direction.y;
+    direction.y = 0;
+    float distance = direction.magnitude;
+    float a = angle * Mathf.Deg2Rad;
+    direction.y = distance * Mathf.Tan(a);
+    distance += h / Mathf.Tan(a);
+
+
+    float velocity = Mathf.Sqrt(distance * Physics.gravity.magnitude / Mathf.Sin(2 * a));
+    return velocity * direction.normalized;
+
+}
+
+
+public void ShootEnemy()
+{
+    Vector3 playerHeadPosition = playerHead.position - Random.Range(0, 0.4f) * Vector3.up;
+    gun.spawnPoint.forward = (playerHeadPosition - gun.spawnPoint.position).normalized;
+    gun.FireBullet();
+}
+
+public void SetupRagdoll()
+{
+    foreach (var item in GetComponentsInChildren<Rigidbody>())
     {
+        item.isKinematic = true;
+    }
+}
 
-        gun.spawnPoint.localRotation = localRotationGun;
+public void Dead(Vector3 hitPosition)
+{
 
-        gun.transform.parent = null;
-        Rigidbody rb = gun.GetComponent<Rigidbody>();
-        rb.velocity = BallisticVelocityVector(gun.transform.position, playerHead.position, 45);
-        rb.angularVelocity = Vector3.zero;
 
+
+    foreach (var item in GetComponentsInChildren<Rigidbody>())
+    {
+        item.isKinematic = false;
     }
 
-
-    Vector3 BallisticVelocityVector(Vector3 source, Vector3 target, float angle)
+    foreach (var item in Physics.OverlapSphere(hitPosition, 0.3f))
     {
-        Vector3 direction = target - source;
-        float h = direction.y;
-        direction.y = 0;
-        float distance = direction.magnitude;
-        float a = angle * Mathf.Deg2Rad;
-        direction.y = distance * Mathf.Tan(a);
-        distance += h / Mathf.Tan(a);
-
-
-        float velocity = Mathf.Sqrt(distance * Physics.gravity.magnitude / Mathf.Sin(2 * a));
-        return velocity * direction.normalized;
-
-    }
-        
-
-    public void ShootEnemy()
-    {
-        Vector3 playerHeadPosition = playerHead.position - Random.Range(0, 0.4f) * Vector3.up;
-
-        gun.spawnPoint.forward = (playerHeadPosition - gun.spawnPoint.position).normalized;
-
-        gun.FireBullet();
-    }
-
-    public void SetupRagdoll()
-    {
-        foreach (var item in GetComponentsInChildren<Rigidbody>()) 
+        Rigidbody rb = item.GetComponent<Rigidbody>();
+        if (rb)
         {
-            item.isKinematic = true;
+            rb.AddExplosionForce(1000, hitPosition, 0.3f);
         }
     }
 
-    public void Dead(Vector3 hitPosition)
-    {
+    ThrowGun();
+    animator.enabled = false;
+    agent.enabled = false;
+    this.enabled = false;
 
+    StartCoroutine(DisappearAfterDelay());
+}
 
-
-        foreach (var item in GetComponentsInChildren<Rigidbody>())
-        {
-            item.isKinematic = false;
-        }
-
-        foreach (var item in Physics.OverlapSphere(hitPosition, 0.3f))
-        {
-            Rigidbody rb = item.GetComponent<Rigidbody>();
-            if (rb)
-            {
-                rb.AddExplosionForce(1000, hitPosition, 0.3f);
-            }
-        }
-
-        ThrowGun();
-        animator.enabled = false;
-        agent.enabled = false;
-        this.enabled = false;
-
-    }
- 
+IEnumerator DisappearAfterDelay()
+{
+    yield return new WaitForSeconds(3);
+    Destroy(gameObject);
+}
 }
